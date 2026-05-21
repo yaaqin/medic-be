@@ -1,28 +1,36 @@
-// src/app.module.ts (updated)
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
-
-import { PatientModule } from './module/patient/patient.module';
-import { CryptoModule } from './module/crypto/crypto.module';
-import { BlockchainModule } from './module/blockchain/blockchain.module';
-import { IpfsModule } from './module/ipfs/ipfs.module';
-import { AuthModule } from './module/auth/auth.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { PatientModule } from './patient/patient.module';
+import appConfig from './config/app.config';
+import jwtConfig from './config/jwt.config';
+import suiConfig from './config/sui.config';
 
 @Module({
   imports: [
+    // Config — load semua config files, tersedia global
     ConfigModule.forRoot({
       isGlobal: true,
+      load: [appConfig, jwtConfig, suiConfig],
       envFilePath: '.env',
     }),
+
+    // Rate limiting global
+    ThrottlerModule.forRoot([
+      {
+        ttl: parseInt(process.env.THROTTLE_TTL ?? '60000'),
+        limit: parseInt(process.env.THROTTLE_LIMIT ?? '100'),
+      },
+    ]),
+
+    // Core
+    PrismaModule,
+
+    // Feature modules (tambah di sini per modul)
     AuthModule,
     PatientModule,
-    CryptoModule,
-    BlockchainModule,
-    IpfsModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}

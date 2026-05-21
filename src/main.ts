@@ -1,28 +1,35 @@
-// src/main.ts
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Global prefix
+  app.setGlobalPrefix('api');
+
   // Global validation pipe
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,
+      whitelist: true,           // strip unknown properties
       forbidNonWhitelisted: true,
-      transform: true,
+      transform: true,           // auto-transform to DTO types
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
     }),
   );
 
   // CORS
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+    origin: process.env.CORS_ORIGINS?.split(',') ?? ['http://localhost:3001'],
     credentials: true,
   });
 
-  await app.listen(process.env.PORT || 3000);
-  console.log(`Application running on ${await app.getUrl()}`);
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port);
+  console.log(`🚀 MedRec Backend running on port ${port}`);
+  console.log(`📡 Network: ${process.env.SUI_NETWORK ?? 'testnet'}`);
 }
 
 bootstrap();

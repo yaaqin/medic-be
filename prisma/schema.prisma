@@ -1,0 +1,186 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────
+
+enum Role {
+  PATIENT
+  HOSPITAL_STAFF
+  VERIFIED_DOCTOR
+  ADMIN
+}
+
+enum EmergencyType {
+  LIFE_THREATENING
+  UNCONSCIOUS
+  CRITICAL_SURGERY
+}
+
+enum EbgStatus {
+  INITIATED
+  COMPLETED
+  EXPIRED
+  FAILED
+}
+
+enum ExportRequesterType {
+  PATIENT
+  HOSPITAL
+}
+
+// ─────────────────────────────────────
+// PATIENT
+// ─────────────────────────────────────
+
+model Patient {
+  id              String   @id @default(uuid())
+  patientCode     String   @unique // PAT-0001
+  nikHash         String   @unique // sha256(NIK)
+  ibuKandungHash  String            // sha256(namaIbuKandung)
+  walletPubkey    String   @unique
+  name            String
+  phone           String?
+  email           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  exportHistory   ExportHistory[]
+  ebgLogs         EmergencyAccessLog[] @relation("PatientEbgLogs")
+
+  @@index([nikHash])
+  @@map("patients")
+}
+
+// ─────────────────────────────────────
+// HOSPITAL
+// ─────────────────────────────────────
+
+model Hospital {
+  id            String   @id @default(uuid())
+  hospitalCode  String   @unique // RSUD-B, PUSKESMAS-C
+  name          String
+  address       String?
+  walletAddress String   @unique
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  staff         HospitalStaff[]
+
+  @@map("hospitals")
+}
+
+// ─────────────────────────────────────
+// HOSPITAL STAFF / DOCTOR
+// ─────────────────────────────────────
+
+model HospitalStaff {
+  id              String   @id @default(uuid())
+  staffCode       String   @unique // DOC-0001
+  name            String
+  email           String   @unique
+  passwordHash    String
+  role            Role     @default(HOSPITAL_STAFF)
+  hospitalId      String
+  hospital        Hospital @relation(fields: [hospitalId], references: [id])
+
+  // Doctor-specific (nullable for non-doctor staff)
+  nikHash         String?
+  strNumber       String?  // Surat Tanda Registrasi
+  sipNumber       String?  // Surat Izin Praktik
+  specialization  String?
+  isVerifiedDoctor Boolean @default(false)
+  verifiedAt      DateTime?
+  verifiedById    String?  // admin yang verifikasi
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  ebgLogsAsDoctor EmergencyAccessLog[] @relation("DoctorEbgLogs")
+
+  @@index([email])
+  @@map("hospital_staff")
+}
+
+// ─────────────────────────────────────
+// EXPORT HISTORY
+// ─────────────────────────────────────
+
+model ExportHistory {
+  id              String              @id @default(uuid())
+  exportCode      String              @unique // EXP-0001
+  patientId       String
+  patient         Patient             @relation(fields: [patientId], references: [id])
+  requesterType   ExportRequesterType
+  requesterId     String
+  fileSizeMb      Float
+  costSgt         Float
+  blockchainTx    String?
+  ipfsRef         String?
+  createdAt       DateTime            @default(now())
+
+  @@index([patientId])
+  @@map("export_history")
+}
+
+// ─────────────────────────────────────
+// EMERGENCY BREAK GLASS
+// ─────────────────────────────────────
+
+model EmergencyAccessLog {
+  id                    String        @id @default(uuid())
+  ebgCode               String        @unique // EBG-2024-0001
+  patientId             String
+  patient               Patient       @relation("PatientEbgLogs", fields: [patientId], references: [id])
+  doctorId              String
+  doctor                HospitalStaff @relation("DoctorEbgLogs", fields: [doctorId], references: [id])
+  hospitalId            String
+  emergencyType         EmergencyType
+  justification         String        // plaintext — untuk keperluan legal/audit
+  justificationHash     String        // sha256(justification) — ini yang ke blockchain
+  sessionId             String        @unique // UUID, single-use token identifier
+  sessionUsed           Boolean       @default(false)
+  sessionUsedAt         DateTime?
+  status                EbgStatus     @default(INITIATED)
+  recordsAccessed       String[]      // array of record_ids
+  blockchainTxInitiated String?
+  blockchainTxCompleted String?
+  witnessedBy           String?
+  location              String?
+  completedAt           DateTime?
+  createdAt             DateTime      @default(now())
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([sessionId])
+  @@map("emergency_access_logs")
+}
+
+// ─────────────────────────────────────
+// FEE CONFIG HISTORY (mirror dari blockchain)
+// ─────────────────────────────────────
+
+model FeeConfigHistory {
+  id            String   @id @default(uuid())
+  feeType       String   // export_base | export_multiplier | recording | access
+  oldValueSgt   Float
+  newValueSgt   Float
+  changedById   String
+  blockchainTx  String?
+  createdAt     DateTime @default(now())
+
+  @@map("fee_config_history")
+}

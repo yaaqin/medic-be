@@ -1,3 +1,27 @@
-node_modules/
-dist/
+# dependencies
+/node_modules
+
+# build
+/dist
+
+# environment
 .env
+.env.local
+
+# logs
+npm-debug.log*
+
+# coverage
+/coverage
+
+# prisma
+/prisma/dev.db
+
+# macOS
+.DS_Store
+
+# vscode
+.vscode
+
+# typescript
+*.tsbuildinfo

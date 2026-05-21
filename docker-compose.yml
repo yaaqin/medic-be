@@ -1,0 +1,48 @@
+version: '3.9'
+
+# Docker Compose untuk services DB saja.
+# NestJS app dijalankan langsung di VPS (bukan container).
+# Usage:
+#   docker-compose up -d          → start semua
+#   docker-compose down           → stop semua
+#   docker-compose logs -f        → tail logs
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: medrec_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: medrec_db
+      POSTGRES_USER: medrec_user
+      POSTGRES_PASSWORD: medrec_pass   # ganti di production!
+    ports:
+      - "127.0.0.1:5432:5432"          # bind localhost only, tidak expose ke public
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medrec_user -d medrec_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: medrec_redis
+    restart: unless-stopped
+    command: redis-server --requirepass ""  # set password jika perlu
+    ports:
+      - "127.0.0.1:6379:6379"              # bind localhost only
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
