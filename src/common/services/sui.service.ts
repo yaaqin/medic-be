@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
 import { TransactionBlock } from '@mysten/sui.js/transactions';
 import { Ed25519Keypair } from '@mysten/sui.js/keypairs/ed25519';
+import { fromB64 } from '@mysten/sui.js/utils';
 
 @Injectable()
 export class SuiService {
@@ -26,9 +27,13 @@ export class SuiService {
 
     const adminPrivKey = this.config.get<string>('sui.adminPrivateKey') ?? '';
     if (adminPrivKey) {
-      this.adminKeypair = Ed25519Keypair.fromSecretKey(
-        Buffer.from(adminPrivKey, 'hex'),
-      );
+      try {
+        const raw = fromB64(adminPrivKey.replace('suiprivkey1q', ''));
+        this.adminKeypair = Ed25519Keypair.fromSecretKey(raw.slice(1));
+        this.logger.log('✅ Sui admin keypair loaded');
+      } catch (e) {
+        this.logger.warn(`⚠️  Failed to load admin keypair: ${(e as Error).message}`);
+      }
     } else {
       this.logger.warn('⚠️  SUI_ADMIN_PRIVATE_KEY not set — blockchain writes disabled');
     }

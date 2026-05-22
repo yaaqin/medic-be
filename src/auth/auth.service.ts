@@ -24,7 +24,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly crypto: CryptoService,
     private readonly sui: SuiService,
-  ) {}
+  ) { }
 
   // ─────────────────────────────────────────────────
   // PATIENT AUTH
@@ -112,10 +112,10 @@ export class AuthService {
         patientCode: patient.patientCode,
         nikHash: patient.nikHash,
         role: 'PATIENT',
+        expiresIn: this.config.get<string>('jwt.expiresIn') ?? '7d',
       },
       {
         secret: this.config.get<string>('jwt.secret'),
-        expiresIn: this.config.get<string>('jwt.expiresIn') ?? '7d',
       },
     );
 
@@ -157,11 +157,11 @@ export class AuthService {
         staffCode: staff.staffCode,
         hospitalId: staff.hospitalId,
         role: staff.role,
+        expiresIn: this.config.get<string>('jwt.expiresIn') ?? '7d',
       },
       {
-        secret: this.config.get<string>('jwt.hospitalSecret'),
-        expiresIn: this.config.get<string>('jwt.hospitalExpiresIn') ?? '8h',
-      },
+        secret: this.config.get<string>('jwt.secret'),
+      }
     );
 
     return {
