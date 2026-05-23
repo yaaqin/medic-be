@@ -15,6 +15,8 @@ async function main() {
       name: 'RSUD B Kota Lampung',
       address: 'Jl. Raya Bandar Lampung No. 1',
       walletAddress: '0xRSUDB_WALLET_ADDRESS_PLACEHOLDER',
+      walletEncryptedKey: 'SEED_PLACEHOLDER_NOT_REAL',
+      walletKeyIv: '000000000000000000000000',
       isActive: true,
     },
   });
@@ -28,6 +30,8 @@ async function main() {
       name: 'Puskesmas C Kecamatan Tengah',
       address: 'Jl. Puskesmas No. 5',
       walletAddress: '0xPUSKESMASC_WALLET_ADDRESS_PLACEHOLDER',
+      walletEncryptedKey: 'SEED_PLACEHOLDER_NOT_REAL',
+      walletKeyIv: '000000000000000000000000',
       isActive: true,
     },
   });

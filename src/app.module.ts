@@ -7,6 +7,7 @@ import { PatientModule } from './patient/patient.module';
 import appConfig from './config/app.config';
 import jwtConfig from './config/jwt.config';
 import suiConfig from './config/sui.config';
+import { HospitalModule } from './hospital/hospital.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import suiConfig from './config/sui.config';
     // Feature modules (tambah di sini per modul)
     AuthModule,
     PatientModule,
+    HospitalModule,
   ],
 })
 export class AppModule {}

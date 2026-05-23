@@ -54,7 +54,6 @@ model Patient {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  // Relations
   exportHistory   ExportHistory[]
   ebgLogs         EmergencyAccessLog[] @relation("PatientEbgLogs")
 
@@ -67,19 +66,46 @@ model Patient {
 // ─────────────────────────────────────
 
 model Hospital {
-  id            String   @id @default(uuid())
-  hospitalCode  String   @unique // RSUD-B, PUSKESMAS-C
-  name          String
-  address       String?
-  walletAddress String   @unique
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  hospitalCode        String   @unique // RSUD-B, PUSKESMAS-C
+  name                String
+  address             String?
+  phone               String?
+  email               String?
 
-  // Relations
-  staff         HospitalStaff[]
+  // Sui wallet — gas sponsor untuk semua dokter di hospital ini
+  walletAddress       String   @unique  // Sui address (0x...)
+  walletEncryptedKey  String            // AES-256-GCM encrypted private key
+  walletKeyIv         String            // IV untuk decrypt (hex)
+
+  isActive            Boolean  @default(true)
+  registeredById      String?           // admin UUID yang daftarin
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  staff               HospitalStaff[]
+  inviteCodes         HospitalInviteCode[]
 
   @@map("hospitals")
+}
+
+// ─────────────────────────────────────
+// HOSPITAL INVITE CODE
+// ─────────────────────────────────────
+
+model HospitalInviteCode {
+  id           String    @id @default(uuid())
+  code         String    @unique  // random 8-char uppercase, e.g. "RSUD1A2B"
+  hospitalId   String
+  hospital     Hospital  @relation(fields: [hospitalId], references: [id])
+  role         Role      @default(HOSPITAL_STAFF)  // bisa set VERIFIED_DOCTOR langsung
+  usedById     String?   // staff yang pakai kode ini
+  usedAt       DateTime?
+  expiresAt    DateTime  // default 7 hari dari created
+  createdAt    DateTime  @default(now())
+
+  @@index([hospitalId])
+  @@map("hospital_invite_codes")
 }
 
 // ─────────────────────────────────────
@@ -88,7 +114,7 @@ model Hospital {
 
 model HospitalStaff {
   id              String   @id @default(uuid())
-  staffCode       String   @unique // DOC-0001
+  staffCode       String   @unique // DOC-0001 / STF-0001
   name            String
   email           String   @unique
   passwordHash    String
@@ -96,19 +122,20 @@ model HospitalStaff {
   hospitalId      String
   hospital        Hospital @relation(fields: [hospitalId], references: [id])
 
-  // Doctor-specific (nullable for non-doctor staff)
+  // Doctor-specific (nullable untuk non-doctor staff)
   nikHash         String?
   strNumber       String?  // Surat Tanda Registrasi
   sipNumber       String?  // Surat Izin Praktik
   specialization  String?
   isVerifiedDoctor Boolean @default(false)
   verifiedAt      DateTime?
-  verifiedById    String?  // admin yang verifikasi
+  verifiedById    String?  // admin UUID yang verifikasi
+
+  inviteCodeUsed  String?  // kode invite yang dipakai saat register
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  // Relations
   ebgLogsAsDoctor EmergencyAccessLog[] @relation("DoctorEbgLogs")
 
   @@index([email])
@@ -151,11 +178,11 @@ model EmergencyAccessLog {
   emergencyType         EmergencyType
   justification         String        // plaintext — untuk keperluan legal/audit
   justificationHash     String        // sha256(justification) — ini yang ke blockchain
-  sessionId             String        @unique // UUID, single-use token identifier
+  sessionId             String        @unique
   sessionUsed           Boolean       @default(false)
   sessionUsedAt         DateTime?
   status                EbgStatus     @default(INITIATED)
-  recordsAccessed       String[]      // array of record_ids
+  recordsAccessed       String[]
   blockchainTxInitiated String?
   blockchainTxCompleted String?
   witnessedBy           String?
@@ -170,12 +197,12 @@ model EmergencyAccessLog {
 }
 
 // ─────────────────────────────────────
-// FEE CONFIG HISTORY (mirror dari blockchain)
+// FEE CONFIG HISTORY
 // ─────────────────────────────────────
 
 model FeeConfigHistory {
   id            String   @id @default(uuid())
-  feeType       String   // export_base | export_multiplier | recording | access
+  feeType       String
   oldValueSgt   Float
   newValueSgt   Float
   changedById   String
