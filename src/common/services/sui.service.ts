@@ -1,5 +1,4 @@
-// src/common/services/sui.service.ts
-
+import { decodeSuiPrivateKey } from '@mysten/sui.js/cryptography';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SuiClient, getFullnodeUrl } from '@mysten/sui.js/client';
@@ -44,16 +43,16 @@ export class SuiService {
       this.logger.warn('⚠️  SUI_ADMIN_PRIVATE_KEY not set — blockchain writes disabled');
     }
 
-    this.packageId         = this.config.get<string>('sui.packageId') ?? '';
+    this.packageId = this.config.get<string>('sui.packageId') ?? '';
     this.patientRegistryId = this.config.get<string>('sui.patientRegistryId') ?? '';
-    this.recordRegistryId  = this.config.get<string>('sui.recordRegistryId') ?? '';
-    this.feeConfigId       = this.config.get<string>('sui.feeConfigId') ?? '';
-    this.treasuryId        = this.config.get<string>('sui.treasuryId') ?? '';
-    this.ebgRegistryId     = this.config.get<string>('sui.ebgRegistryId') ?? '';
-    this.doctorRegistryId  = this.config.get<string>('sui.doctorRegistryId') ?? '';
-    this.doctorAdminCapId  = this.config.get<string>('sui.doctorAdminCapId') ?? '';
-    this.recordAdminCapId  = this.config.get<string>('sui.recordAdminCapId') ?? '';
-    this.sgtCoinType       = this.config.get<string>('sui.sgtCoinType') ?? '';
+    this.recordRegistryId = this.config.get<string>('sui.recordRegistryId') ?? '';
+    this.feeConfigId = this.config.get<string>('sui.feeConfigId') ?? '';
+    this.treasuryId = this.config.get<string>('sui.treasuryId') ?? '';
+    this.ebgRegistryId = this.config.get<string>('sui.ebgRegistryId') ?? '';
+    this.doctorRegistryId = this.config.get<string>('sui.doctorRegistryId') ?? '';
+    this.doctorAdminCapId = this.config.get<string>('sui.doctorAdminCapId') ?? '';
+    this.recordAdminCapId = this.config.get<string>('sui.recordAdminCapId') ?? '';
+    this.sgtCoinType = this.config.get<string>('sui.sgtCoinType') ?? '';
 
     this.logger.log(`✅ Sui client connected — network: ${network}`);
   }
@@ -428,9 +427,11 @@ export class SuiService {
   }
 
   parseKeypair(key: string): Ed25519Keypair {
-    if (key.startsWith('suiprivkey1q')) {
-      const raw = fromB64(key.replace('suiprivkey1q', ''));
-      return Ed25519Keypair.fromSecretKey(raw.slice(1));
+    if (key.startsWith('suiprivkey1')) {
+      const decoded = decodeSuiPrivateKey(key);
+      this.logger.log(`secretKey length: ${decoded.secretKey.length}`);
+      this.logger.log(`schema: ${decoded.schema}`);
+      return Ed25519Keypair.fromSecretKey(decoded.secretKey);
     }
     if (/^[0-9a-fA-F]{64}$/.test(key)) {
       return Ed25519Keypair.fromSecretKey(Buffer.from(key, 'hex'));

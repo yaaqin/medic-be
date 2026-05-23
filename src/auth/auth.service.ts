@@ -3,6 +3,7 @@ import {
   ConflictException,
   UnauthorizedException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +14,8 @@ import { SuiService } from '../common/services/sui.service';
 import { RegisterPatientDto } from './dto/register-patient.dto';
 import { LoginPatientDto } from './dto/login-patient.dto';
 import { LoginHospitalDto } from './dto/login-hospital.dto';
+import { LoginAdminDto } from './dto/login-admin.dto';
+import { RegisterStaffDto } from './dto/register-staff.dto';
 
 @Injectable()
 export class AuthService {
@@ -177,4 +180,148 @@ export class AuthService {
       message: 'Login berhasil',
     };
   }
+
+  async loginAdmin(dto: LoginAdminDto) {
+    // Derive address dari private key yang diinput
+    let inputAddress: string;
+
+    this.logger.log(`Input key prefix: ${dto.privateKey.substring(0, 20)}...`);
+    this.logger.log(`Input address:    ${inputAddress}`);
+    try {
+      const keypair = this.sui.parseKeypair(dto.privateKey);
+      inputAddress = keypair.getPublicKey().toSuiAddress();
+    } catch (e) {
+      this.logger.error(`parseKeypair error: ${(e as Error).message}`);
+      throw new UnauthorizedException('Private key tidak valid');
+    }
+
+    // Bandingkan dengan deployer address — derive dari SUI_ADMIN_PRIVATE_KEY di .env
+    const adminPrivKey = this.config.get<string>('sui.adminPrivateKey') ?? '';
+    if (!adminPrivKey) {
+      throw new UnauthorizedException('Admin belum dikonfigurasi di server');
+    }
+
+    let adminAddress: string;
+    this.logger.log(`Admin address:    ${adminAddress}`);
+    this.logger.log(`Match:            ${inputAddress === adminAddress}`);
+    try {
+      const adminKeypair = this.sui.parseKeypair(adminPrivKey);
+      adminAddress = adminKeypair.getPublicKey().toSuiAddress();
+    } catch (e) {
+      throw new UnauthorizedException('Konfigurasi admin server error');
+    }
+
+    if (inputAddress !== adminAddress) {
+      throw new UnauthorizedException('Private key tidak cocok');
+    }
+
+    const token = this.jwtService.sign(
+      {
+        sub: adminAddress,
+        address: adminAddress,
+        role: 'ADMIN',
+        expiresIn: this.config.get<string>('jwt.adminExpiresIn') ?? '8h',
+      },
+      {
+        secret: this.config.get<string>('jwt.adminSecret'),
+      },
+    );
+
+    this.logger.log(`Admin login: ${adminAddress}`);
+
+    return {
+      success: true,
+      address: adminAddress,
+      token,
+      message: 'Login admin berhasil',
+    };
+  }
+
+  
+  async registerStaff(dto: RegisterStaffDto) {
+    // 1. Validasi invite code
+    const invite = await this.prisma.hospitalInviteCode.findUnique({
+      where: { code: dto.inviteCode },
+      include: { hospital: true },
+    });
+ 
+    if (!invite) throw new BadRequestException('Invite code tidak valid');
+    if (invite.usedById) throw new ConflictException('Invite code sudah digunakan');
+    if (new Date() > invite.expiresAt) throw new BadRequestException('Invite code sudah expired');
+    if (!invite.hospital.isActive) throw new BadRequestException('Hospital tidak aktif');
+ 
+    // 2. Cek email belum terdaftar
+    const existingEmail = await this.prisma.hospitalStaff.findUnique({
+      where: { email: dto.email },
+    });
+    if (existingEmail) throw new ConflictException('Email sudah terdaftar');
+ 
+    // 3. Generate staff code
+    const prefix = invite.role === 'VERIFIED_DOCTOR' ? 'DOC' : 'STF';
+    const count = await this.prisma.hospitalStaff.count();
+    const staffCode = `${prefix}-${String(count + 1).padStart(4, '0')}`;
+ 
+    // 4. Hash password
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+ 
+    // 5. Hash NIK dokter kalau ada
+    let nikHash: string | undefined;
+    if (dto.nik) {
+      nikHash = this.crypto.hashSha256(dto.nik);
+    }
+ 
+    // 6. Simpan staff
+    const staff = await this.prisma.hospitalStaff.create({
+      data: {
+        staffCode,
+        name: dto.name,
+        email: dto.email,
+        passwordHash,
+        role: invite.role,
+        hospitalId: invite.hospitalId,
+        nikHash,
+        strNumber: dto.strNumber,
+        sipNumber: dto.sipNumber,
+        specialization: dto.specialization,
+        isVerifiedDoctor: invite.role === 'VERIFIED_DOCTOR',
+        verifiedAt: invite.role === 'VERIFIED_DOCTOR' ? new Date() : undefined,
+        inviteCodeUsed: dto.inviteCode,
+      },
+    });
+ 
+    // 7. Mark invite code sebagai sudah dipakai
+    await this.prisma.hospitalInviteCode.update({
+      where: { code: dto.inviteCode },
+      data: { usedById: staff.id, usedAt: new Date() },
+    });
+ 
+    // 8. Kalau VERIFIED_DOCTOR, register on-chain juga
+    if (invite.role === 'VERIFIED_DOCTOR' && dto.strNumber && dto.sipNumber) {
+      this.sui
+        .verifyDoctorOnChain({
+          doctorId: staffCode,
+          nikHash: nikHash ?? '',
+          strNumber: dto.strNumber,
+          sipNumber: dto.sipNumber,
+          hospitalId: invite.hospital.hospitalCode,
+          specialization: dto.specialization ?? 'General',
+        })
+        .then((tx) => this.logger.log(`Doctor ${staffCode} verified on chain: ${tx}`))
+        .catch((e) => this.logger.error('Doctor on-chain verification failed', e));
+    }
+ 
+    this.logger.log(`Staff registered: ${staffCode} @ ${invite.hospital.hospitalCode}`);
+ 
+    return {
+      success: true,
+      staffCode,
+      name: staff.name,
+      role: staff.role,
+      hospitalCode: invite.hospital.hospitalCode,
+      hospitalName: invite.hospital.name,
+      isVerifiedDoctor: staff.isVerifiedDoctor,
+      message: 'Registrasi berhasil',
+    };
+  }
+
 }

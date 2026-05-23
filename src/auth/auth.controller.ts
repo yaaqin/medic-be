@@ -3,10 +3,12 @@ import { AuthService } from './auth.service';
 import { RegisterPatientDto } from './dto/register-patient.dto';
 import { LoginPatientDto } from './dto/login-patient.dto';
 import { LoginHospitalDto } from './dto/login-hospital.dto';
+import { LoginAdminDto } from './dto/login-admin.dto';
+import { RegisterStaffDto } from './dto/register-staff.dto';
 
 @Controller()
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   /**
    * POST /api/patient/register
@@ -35,5 +37,16 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async loginHospital(@Body() dto: LoginHospitalDto) {
     return this.authService.loginHospital(dto);
+  }
+
+  @Post('admin/login')
+  @HttpCode(HttpStatus.OK)
+  async loginAdmin(@Body() dto: LoginAdminDto) {
+    return this.authService.loginAdmin(dto);
+  }
+
+  @Post('auth/staff/register')
+  async registerStaff(@Body() dto: RegisterStaffDto) {
+    return this.authService.registerStaff(dto);
   }
 }

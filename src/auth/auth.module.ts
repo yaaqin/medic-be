@@ -8,6 +8,7 @@ import { JwtHospitalStrategy } from './strategies/jwt-hospital.strategy';
 import { CryptoService } from '../common/services/crypto.service';
 import { SuiService } from '../common/services/sui.service';
 import { RedisService } from '../common/services/redis.service';
+import { JwtAdminStrategy } from './strategies/jwt-admin.strategy';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { RedisService } from '../common/services/redis.service';
     AuthService,
     JwtPatientStrategy,
     JwtHospitalStrategy,
+    JwtAdminStrategy,
     CryptoService,
     SuiService,
     RedisService,

@@ -99,7 +99,7 @@ export class HospitalService {
         name: hospital.name,
         walletAddress: hospital.walletAddress,
         // Private key TIDAK di-return, tapi expose sekali untuk admin simpan manual
-        walletPrivateKeyOnce: `suiprivkey — simpan baik-baik, tidak akan ditampilkan lagi`,
+        walletPrivateKeyOnce: privateKeyHex,
       },
       message: 'Hospital berhasil didaftarkan',
     };

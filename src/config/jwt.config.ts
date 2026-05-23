@@ -7,4 +7,6 @@ export default registerAs('jwt', () => ({
   hospitalExpiresIn: process.env.JWT_HOSPITAL_EXPIRES_IN ?? '8h',
   ebgSecret: process.env.JWT_EBG_SECRET ?? 'fallback-ebg-secret',
   ebgExpiresIn: process.env.JWT_EBG_EXPIRES_IN ?? '15m',
+  adminSecret: process.env.JWT_ADMIN_SECRET ?? 'fallback-admin-secret', 
+  adminExpiresIn: process.env.JWT_ADMIN_EXPIRES_IN ?? '8h', 
 }));
