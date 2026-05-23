@@ -1,5 +1,4 @@
 // src/common/services/sui.service.ts
-// REPLACE file lama dengan ini
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,8 +18,12 @@ export class SuiService {
   private readonly patientRegistryId: string;
   private readonly recordRegistryId: string;
   private readonly feeConfigId: string;
+  private readonly treasuryId: string;
   private readonly ebgRegistryId: string;
   private readonly doctorRegistryId: string;
+  private readonly doctorAdminCapId: string;
+  private readonly recordAdminCapId: string;
+  private readonly sgtCoinType: string;
 
   constructor(private readonly config: ConfigService) {
     const network = this.config.get<string>('sui.network') ?? 'testnet';
@@ -29,7 +32,6 @@ export class SuiService {
 
     this.client = new SuiClient({ url: rpcUrl });
 
-    // Load admin keypair
     const adminPrivKey = this.config.get<string>('sui.adminPrivateKey') ?? '';
     if (adminPrivKey) {
       try {
@@ -42,12 +44,16 @@ export class SuiService {
       this.logger.warn('⚠️  SUI_ADMIN_PRIVATE_KEY not set — blockchain writes disabled');
     }
 
-    this.packageId          = this.config.get<string>('sui.packageId') ?? '';
-    this.patientRegistryId  = this.config.get<string>('sui.patientRegistryId') ?? '';
-    this.recordRegistryId   = this.config.get<string>('sui.recordRegistryId') ?? '';
-    this.feeConfigId        = this.config.get<string>('sui.feeConfigId') ?? '';
-    this.ebgRegistryId      = this.config.get<string>('sui.ebgRegistryId') ?? '';
-    this.doctorRegistryId   = this.config.get<string>('sui.doctorRegistryId') ?? '';
+    this.packageId         = this.config.get<string>('sui.packageId') ?? '';
+    this.patientRegistryId = this.config.get<string>('sui.patientRegistryId') ?? '';
+    this.recordRegistryId  = this.config.get<string>('sui.recordRegistryId') ?? '';
+    this.feeConfigId       = this.config.get<string>('sui.feeConfigId') ?? '';
+    this.treasuryId        = this.config.get<string>('sui.treasuryId') ?? '';
+    this.ebgRegistryId     = this.config.get<string>('sui.ebgRegistryId') ?? '';
+    this.doctorRegistryId  = this.config.get<string>('sui.doctorRegistryId') ?? '';
+    this.doctorAdminCapId  = this.config.get<string>('sui.doctorAdminCapId') ?? '';
+    this.recordAdminCapId  = this.config.get<string>('sui.recordAdminCapId') ?? '';
+    this.sgtCoinType       = this.config.get<string>('sui.sgtCoinType') ?? '';
 
     this.logger.log(`✅ Sui client connected — network: ${network}`);
   }
@@ -66,8 +72,6 @@ export class SuiService {
     if (!this.packageId) return this.mockTxHash('register_patient');
 
     const tx = new TransactionBlock();
-    const clockObj = tx.object('0x6'); // Sui system clock
-
     tx.moveCall({
       target: `${this.packageId}::patient_registry::register_patient`,
       arguments: [
@@ -77,7 +81,7 @@ export class SuiService {
         tx.pure(params.ibuKandungHash),
         tx.pure(params.walletPubkey),
         tx.pure(params.patientName),
-        clockObj,
+        tx.object('0x6'), // Sui system clock
       ],
     });
 
@@ -119,12 +123,10 @@ export class SuiService {
     if (!this.packageId) return this.mockTxHash('verify_doctor');
 
     const tx = new TransactionBlock();
-    const clockObj = tx.object('0x6');
-
     tx.moveCall({
       target: `${this.packageId}::doctor_registry::verify_doctor`,
       arguments: [
-        tx.object(this.config.get<string>('sui.doctorAdminCapId') ?? ''),
+        tx.object(this.doctorAdminCapId),
         tx.object(this.doctorRegistryId),
         tx.pure(params.doctorId),
         tx.pure(params.nikHash),
@@ -132,7 +134,7 @@ export class SuiService {
         tx.pure(params.sipNumber),
         tx.pure(params.hospitalId),
         tx.pure(params.specialization),
-        clockObj,
+        tx.object('0x6'),
       ],
     });
 
@@ -145,32 +147,59 @@ export class SuiService {
 
   /**
    * Create medical record on-chain.
-   * Gas disponsori oleh hospital keypair (bukan admin).
+   *
+   * Contract signature:
+   * create_record(registry, patient_reg, fee_config, treasury,
+   *               record_id, patient_nik_hash, hospital_id, doctor_id,
+   *               ipfs_ref, data_hash, record_type, payment: Coin<SGT>, clock, ctx)
+   *
+   * Gas + SGT fee disponsori hospital wallet.
    */
   async createRecordOnChain(
     params: {
       recordId: string;
       patientNikHash: string;
-      hospitalId: string;       // hospitalCode e.g. "RSUD-BEKASI"
-      doctorId: string;         // staffCode e.g. "DOC-0001"
+      hospitalId: string;
+      doctorId: string;
       ipfsRef: string;
       dataHash: string;
       recordType: string;
-      feePaid: number;          // dalam base units SGT (0 jika fee disabled)
     },
-    hospitalKeypair: Ed25519Keypair, // hospital wallet sebagai gas sponsor
+    hospitalKeypair: Ed25519Keypair,
   ): Promise<string> {
     if (!this.packageId) return this.mockTxHash('create_record');
 
     const tx = new TransactionBlock();
-    const clockObj = tx.object('0x6');
+
+    // Ambil SGT coin dari hospital wallet untuk bayar fee
+    // splitCoin dari semua SGT coins yang dimiliki hospital
+    const [sgtPayment] = tx.splitCoins(
+      tx.gas, // placeholder — diganti dengan SGT coin di bawah
+      [tx.pure(0)],
+    );
+
+    // Fetch SGT coins milik hospital untuk payment
+    const hospitalAddress = hospitalKeypair.getPublicKey().toSuiAddress();
+    const sgtCoins = await this.client.getCoins({
+      owner: hospitalAddress,
+      coinType: this.sgtCoinType,
+    });
+
+    if (!sgtCoins.data.length) {
+      throw new Error(`Hospital ${hospitalAddress} tidak punya SGT untuk bayar fee`);
+    }
+
+    // Pakai coin SGT pertama sebagai payment (contract handle kembalian)
+    const paymentCoin = tx.object(sgtCoins.data[0].coinObjectId);
 
     tx.moveCall({
       target: `${this.packageId}::medical_records::create_record`,
+      typeArguments: [this.sgtCoinType],
       arguments: [
         tx.object(this.recordRegistryId),
         tx.object(this.patientRegistryId),
         tx.object(this.feeConfigId),
+        tx.object(this.treasuryId),
         tx.pure(params.recordId),
         tx.pure(params.patientNikHash),
         tx.pure(params.hospitalId),
@@ -178,18 +207,20 @@ export class SuiService {
         tx.pure(params.ipfsRef),
         tx.pure(params.dataHash),
         tx.pure(params.recordType),
-        tx.pure(params.feePaid),
-        clockObj,
+        paymentCoin,
+        tx.object('0x6'),
       ],
     });
 
-    // Sign dengan hospital wallet, bukan admin
     return this.executeTransaction(tx, hospitalKeypair);
   }
 
   /**
-   * Log access on-chain.
-   * Gas disponsori hospital keypair.
+   * Log access on-chain — audit trail.
+   *
+   * Contract signature:
+   * log_access(registry, access_id, patient_nik_hash, accessing_hospital,
+   *            accessed_records, purpose, clock, ctx)
    */
   async logAccessOnChain(
     params: {
@@ -204,8 +235,6 @@ export class SuiService {
     if (!this.packageId) return this.mockTxHash('log_access');
 
     const tx = new TransactionBlock();
-    const clockObj = tx.object('0x6');
-
     tx.moveCall({
       target: `${this.packageId}::medical_records::log_access`,
       arguments: [
@@ -215,7 +244,7 @@ export class SuiService {
         tx.pure(params.accessingHospital),
         tx.pure(params.recordIds),
         tx.pure(params.purpose),
-        clockObj,
+        tx.object('0x6'),
       ],
     });
 
@@ -237,8 +266,6 @@ export class SuiService {
     if (!this.packageId) return this.mockTxHash('ebg_initiated');
 
     const tx = new TransactionBlock();
-    const clockObj = tx.object('0x6');
-
     tx.moveCall({
       target: `${this.packageId}::emergency_break_glass::initiate_emergency_access`,
       arguments: [
@@ -251,7 +278,7 @@ export class SuiService {
         tx.pure(params.emergencyType),
         tx.pure(params.justificationHash),
         tx.pure(params.sessionId),
-        clockObj,
+        tx.object('0x6'),
       ],
     });
 
@@ -265,15 +292,49 @@ export class SuiService {
     if (!this.packageId) return this.mockTxHash('ebg_completed');
 
     const tx = new TransactionBlock();
-    const clockObj = tx.object('0x6');
-
     tx.moveCall({
       target: `${this.packageId}::emergency_break_glass::complete_emergency_access`,
       arguments: [
         tx.object(this.ebgRegistryId),
         tx.pure(params.ebgId),
         tx.pure(params.recordsAccessed),
-        clockObj,
+        tx.object('0x6'),
+      ],
+    });
+
+    return this.executeTransaction(tx);
+  }
+
+  async logEbgFailed(params: {
+    ebgId: string;
+    reason: string;
+  }): Promise<string> {
+    if (!this.packageId) return this.mockTxHash('ebg_failed');
+
+    const tx = new TransactionBlock();
+    tx.moveCall({
+      target: `${this.packageId}::emergency_break_glass::fail_emergency_access`,
+      arguments: [
+        tx.object(this.ebgRegistryId),
+        tx.pure(params.ebgId),
+        tx.pure(params.reason),
+        tx.object('0x6'),
+      ],
+    });
+
+    return this.executeTransaction(tx);
+  }
+
+  async logEbgExpired(ebgId: string): Promise<string> {
+    if (!this.packageId) return this.mockTxHash('ebg_expired');
+
+    const tx = new TransactionBlock();
+    tx.moveCall({
+      target: `${this.packageId}::emergency_break_glass::expire_emergency_access`,
+      arguments: [
+        tx.object(this.ebgRegistryId),
+        tx.pure(ebgId),
+        tx.object('0x6'),
       ],
     });
 
@@ -281,12 +342,70 @@ export class SuiService {
   }
 
   // ─────────────────────────────────────────────────
-  // INTERNALS
+  // SGT BALANCE
   // ─────────────────────────────────────────────────
 
   /**
-   * Execute TX — pakai hospitalKeypair kalau ada, fallback ke adminKeypair.
+   * Cek SGT balance suatu address.
+   * Dipakai sebelum create_record untuk validasi hospital punya cukup SGT.
    */
+  async getSgtBalance(address: string): Promise<{
+    totalBalance: bigint;
+    coins: { coinObjectId: string; balance: string }[];
+  }> {
+    try {
+      const coins = await this.client.getCoins({
+        owner: address,
+        coinType: this.sgtCoinType,
+      });
+
+      const totalBalance = coins.data.reduce(
+        (sum, c) => sum + BigInt(c.balance),
+        BigInt(0),
+      );
+
+      return {
+        totalBalance,
+        coins: coins.data.map((c) => ({
+          coinObjectId: c.coinObjectId,
+          balance: c.balance,
+        })),
+      };
+    } catch (e) {
+      this.logger.error('getSgtBalance failed', e);
+      return { totalBalance: BigInt(0), coins: [] };
+    }
+  }
+
+  /**
+   * Cek fee saat ini dari FeeConfig on-chain.
+   * Returns fee dalam base units SGT.
+   */
+  async getCurrentRecordFee(): Promise<bigint> {
+    try {
+      const obj = await this.client.getObject({
+        id: this.feeConfigId,
+        options: { showContent: true },
+      });
+
+      const fields = (obj.data?.content as any)?.fields;
+      if (!fields) return BigInt(0);
+
+      const enabled = fields.record_fee_enabled;
+      if (!enabled) return BigInt(0);
+
+      // fee_sgt * SGT_DECIMALS (1_000_000_000)
+      return BigInt(fields.record_fee_sgt) * BigInt(1_000_000_000);
+    } catch (e) {
+      this.logger.error('getCurrentRecordFee failed', e);
+      return BigInt(0);
+    }
+  }
+
+  // ─────────────────────────────────────────────────
+  // INTERNALS
+  // ─────────────────────────────────────────────────
+
   private async executeTransaction(
     tx: TransactionBlock,
     signer?: Ed25519Keypair,
@@ -308,20 +427,14 @@ export class SuiService {
     }
   }
 
-  /**
-   * Parse berbagai format Sui private key.
-   */
   parseKeypair(key: string): Ed25519Keypair {
-    // Format suiprivkey1q...
     if (key.startsWith('suiprivkey1q')) {
       const raw = fromB64(key.replace('suiprivkey1q', ''));
       return Ed25519Keypair.fromSecretKey(raw.slice(1));
     }
-    // Format hex 64 char
     if (/^[0-9a-fA-F]{64}$/.test(key)) {
       return Ed25519Keypair.fromSecretKey(Buffer.from(key, 'hex'));
     }
-    // Format base64
     const raw = fromB64(key);
     return Ed25519Keypair.fromSecretKey(raw.length === 33 ? raw.slice(1) : raw);
   }

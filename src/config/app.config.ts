@@ -4,6 +4,7 @@ export default registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: parseInt(process.env.PORT ?? '3000'),
   walletDerivationSalt: process.env.WALLET_DERIVATION_SALT ?? '',
+  walletEncryptionKey: process.env.WALLET_ENCRYPTION_KEY ?? '', // ← tambah
   ebgMaxRequestsPerDay: parseInt(process.env.EBG_MAX_REQUESTS_PER_DAY ?? '3'),
   pinataApiKey: process.env.PINATA_API_KEY ?? '',
   pinataSecretKey: process.env.PINATA_SECRET_API_KEY ?? '',
