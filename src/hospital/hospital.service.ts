@@ -246,12 +246,18 @@ export class HospitalService {
 
     if (!hospital) throw new NotFoundException('Hospital tidak ditemukan');
 
-    const privateKeyHex = this.decryptPrivateKey(
+    const privateKeyRaw = this.decryptPrivateKey(
       hospital.walletEncryptedKey,
       hospital.walletKeyIv,
     );
+    console.log('privateKeyRaw:', privateKeyRaw);
+    console.log('length:', privateKeyRaw.length);
+    const privateKeyStr = Buffer.from(privateKeyRaw, 'hex').toString('utf8');
+    console.log('privateKeyStr:', privateKeyStr); // harusnya suiprivkey1q...
 
-    return Ed25519Keypair.fromSecretKey(Buffer.from(privateKeyHex, 'hex'));
+
+    // privateKeyRaw bisa format suiprivkey1q... atau hex — delegate ke sui.parseKeypair
+    return this.sui.parseKeypair(privateKeyStr);
   }
 
   // ─────────────────────────────────────────────────

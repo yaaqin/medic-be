@@ -170,14 +170,6 @@ export class SuiService {
 
     const tx = new TransactionBlock();
 
-    // Ambil SGT coin dari hospital wallet untuk bayar fee
-    // splitCoin dari semua SGT coins yang dimiliki hospital
-    const [sgtPayment] = tx.splitCoins(
-      tx.gas, // placeholder — diganti dengan SGT coin di bawah
-      [tx.pure(0)],
-    );
-
-    // Fetch SGT coins milik hospital untuk payment
     const hospitalAddress = hospitalKeypair.getPublicKey().toSuiAddress();
     const sgtCoins = await this.client.getCoins({
       owner: hospitalAddress,
@@ -188,12 +180,16 @@ export class SuiService {
       throw new Error(`Hospital ${hospitalAddress} tidak punya SGT untuk bayar fee`);
     }
 
-    // Pakai coin SGT pertama sebagai payment (contract handle kembalian)
-    const paymentCoin = tx.object(sgtCoins.data[0].coinObjectId);
+    const feeAmount = BigInt(1_000_000);
 
-    tx.moveCall({
+    const paymentCoin = tx.object(sgtCoins.data[0].coinObjectId);
+    const sgtCoinObj = tx.object(sgtCoins.data[0].coinObjectId);
+    const [exactPayment] = tx.splitCoins(sgtCoinObj, [tx.pure(feeAmount)]);
+
+
+    // create_record return Coin<SGT> kembalian — harus di-transfer balik ke sender
+    const [change] = tx.moveCall({
       target: `${this.packageId}::medical_records::create_record`,
-      typeArguments: [this.sgtCoinType],
       arguments: [
         tx.object(this.recordRegistryId),
         tx.object(this.patientRegistryId),
@@ -206,10 +202,12 @@ export class SuiService {
         tx.pure(params.ipfsRef),
         tx.pure(params.dataHash),
         tx.pure(params.recordType),
-        paymentCoin,
+        exactPayment,
         tx.object('0x6'),
       ],
     });
+
+    // Transfer kembalian SGT balik ke hospital wallet
 
     return this.executeTransaction(tx, hospitalKeypair);
   }
@@ -393,8 +391,8 @@ export class SuiService {
       const enabled = fields.record_fee_enabled;
       if (!enabled) return BigInt(0);
 
-      // fee_sgt * SGT_DECIMALS (1_000_000_000)
-      return BigInt(fields.record_fee_sgt) * BigInt(1_000_000_000);
+      // fee_sgt * SGT_DECIMALS (1_000_000)
+      return BigInt(fields.record_fee_sgt) * BigInt(1_000_000);
     } catch (e) {
       this.logger.error('getCurrentRecordFee failed', e);
       return BigInt(0);

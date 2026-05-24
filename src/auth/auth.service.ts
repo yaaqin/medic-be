@@ -163,7 +163,7 @@ export class AuthService {
         expiresIn: this.config.get<string>('jwt.expiresIn') ?? '7d',
       },
       {
-        secret: this.config.get<string>('jwt.secret'),
+        secret: this.config.get<string>('jwt.hospitalSecret'), // ← ganti ini
       }
     );
 
@@ -237,39 +237,39 @@ export class AuthService {
     };
   }
 
-  
+
   async registerStaff(dto: RegisterStaffDto) {
     // 1. Validasi invite code
     const invite = await this.prisma.hospitalInviteCode.findUnique({
       where: { code: dto.inviteCode },
       include: { hospital: true },
     });
- 
+
     if (!invite) throw new BadRequestException('Invite code tidak valid');
     if (invite.usedById) throw new ConflictException('Invite code sudah digunakan');
     if (new Date() > invite.expiresAt) throw new BadRequestException('Invite code sudah expired');
     if (!invite.hospital.isActive) throw new BadRequestException('Hospital tidak aktif');
- 
+
     // 2. Cek email belum terdaftar
     const existingEmail = await this.prisma.hospitalStaff.findUnique({
       where: { email: dto.email },
     });
     if (existingEmail) throw new ConflictException('Email sudah terdaftar');
- 
+
     // 3. Generate staff code
     const prefix = invite.role === 'VERIFIED_DOCTOR' ? 'DOC' : 'STF';
     const count = await this.prisma.hospitalStaff.count();
     const staffCode = `${prefix}-${String(count + 1).padStart(4, '0')}`;
- 
+
     // 4. Hash password
     const passwordHash = await bcrypt.hash(dto.password, 12);
- 
+
     // 5. Hash NIK dokter kalau ada
     let nikHash: string | undefined;
     if (dto.nik) {
       nikHash = this.crypto.hashSha256(dto.nik);
     }
- 
+
     // 6. Simpan staff
     const staff = await this.prisma.hospitalStaff.create({
       data: {
@@ -288,13 +288,13 @@ export class AuthService {
         inviteCodeUsed: dto.inviteCode,
       },
     });
- 
+
     // 7. Mark invite code sebagai sudah dipakai
     await this.prisma.hospitalInviteCode.update({
       where: { code: dto.inviteCode },
       data: { usedById: staff.id, usedAt: new Date() },
     });
- 
+
     // 8. Kalau VERIFIED_DOCTOR, register on-chain juga
     if (invite.role === 'VERIFIED_DOCTOR' && dto.strNumber && dto.sipNumber) {
       this.sui
@@ -309,9 +309,9 @@ export class AuthService {
         .then((tx) => this.logger.log(`Doctor ${staffCode} verified on chain: ${tx}`))
         .catch((e) => this.logger.error('Doctor on-chain verification failed', e));
     }
- 
+
     this.logger.log(`Staff registered: ${staffCode} @ ${invite.hospital.hospitalCode}`);
- 
+
     return {
       success: true,
       staffCode,

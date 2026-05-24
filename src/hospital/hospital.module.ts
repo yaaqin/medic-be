@@ -11,6 +11,6 @@ import { CryptoService } from '../common/services/crypto.service';
   imports: [PrismaModule],
   controllers: [HospitalController],
   providers: [HospitalService, SuiService, CryptoService],
-  exports: [HospitalService, SuiService], // SuiService di-export untuk RecordsModule nanti
+  exports: [HospitalService, SuiService, HospitalService], // SuiService di-export untuk RecordsModule nanti
 })
 export class HospitalModule {}

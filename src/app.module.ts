@@ -8,6 +8,7 @@ import appConfig from './config/app.config';
 import jwtConfig from './config/jwt.config';
 import suiConfig from './config/sui.config';
 import { HospitalModule } from './hospital/hospital.module';
+import { RecordsModule } from './records/records.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { HospitalModule } from './hospital/hospital.module';
     AuthModule,
     PatientModule,
     HospitalModule,
+    RecordsModule,
   ],
 })
 export class AppModule {}
